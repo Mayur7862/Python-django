@@ -1,5 +1,31 @@
-@import "tailwindcss";   /* v4 style import */
+@import "tailwindcss";
 
-/* your global bits */
-:root { color-scheme: light dark; }
+/* Brand + global polish */
+:root {
+  color-scheme: light;
+  --brand-50: 239 246 255;
+  --brand-100: 219 234 254;
+  --brand-200: 191 219 254;
+  --brand-400: 96 165 250;
+  --brand-500: 59 130 246;   /* primary */
+  --brand-600: 37 99 235;
+  --brand-700: 29 78 216;
+}
+
 html, body, #root { height: 100%; }
+
+/* Subtle dotted backdrop */
+body {
+  @apply bg-zinc-50 text-zinc-900;
+  background-image: radial-gradient(rgba(0,0,0,0.03) 1px, transparent 1px);
+  background-size: 14px 14px;
+}
+
+/* Inputs & buttons nicer focus */
+:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 2px rgba(var(--brand-500) / 0.25),
+    0 0 0 4px rgba(var(--brand-500) / 0.12);
+  border-radius: 12px;
+}
