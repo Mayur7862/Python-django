@@ -10,30 +10,10 @@ export default function ProjectForm() {
   const [description, setDescription] = useState("");
 
   const [createProject, { loading, error }] = useMutation(CREATE_PROJECT, {
-    update(cache, { data }) {
-      const newProj = data?.createProject?.project;
-      const existing: any = cache.readQuery({ query: GET_PROJECTS });
-      if (existing && newProj) {
-        cache.writeQuery({
-          query: GET_PROJECTS,
-          data: { projects: [newProj, ...existing.projects] },
-        });
-      }
-    },
-    optimisticResponse: {
-      createProject: {
-        __typename: "CreateProject",
-        project: {
-          __typename: "ProjectType",
-          id: "temp-" + Math.random(),
-          name,
-          description,
-          status,
-          dueDate: null,
-          taskCount: 0,
-          completedTasks: 0,
-        },
-      },
+    refetchQueries: [{ query: GET_PROJECTS }],
+    awaitRefetchQueries: true,
+    onCompleted() {
+      nav("/");
     },
   });
 
@@ -41,7 +21,6 @@ export default function ProjectForm() {
     e.preventDefault();
     if (!name.trim()) return;
     await createProject({ variables: { name, description, status } });
-    nav("/");
   };
 
   return (

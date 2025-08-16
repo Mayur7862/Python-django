@@ -25,31 +25,56 @@ export const UPDATE_PROJECT = gql`
 export const GET_TASKS = gql`
   query($projectId: ID!) {
     tasks(projectId: $projectId) {
-      id title description status assigneeEmail dueDate
+      id
+      title
+      description
+      status
+      assigneeEmail
+      dueDate
     }
   }
 `;
 
 export const CREATE_TASK = gql`
-  mutation($projectId: ID!, $title: String!, $description: String, $status: String, $assigneeEmail: String, $dueDate: DateTime) {
-    createTask(projectId: $projectId, title: $title, description: $description, status: $status, assigneeEmail: $assigneeEmail, dueDate: $dueDate) {
+  mutation(
+    $projectId: ID!
+    $title: String!
+    $description: String
+    $status: String
+    $assigneeEmail: String
+    $dueDate: DateTime
+  ) {
+    createTask(
+      projectId: $projectId
+      title: $title
+      description: $description
+      status: $status
+      assignee_email: $assigneeEmail   # <-- map var to snake_case arg
+      due_date: $dueDate               # <-- map var to snake_case arg
+    ) {
       task { id title description status assigneeEmail dueDate }
     }
   }
 `;
 
 export const UPDATE_TASK = gql`
-  mutation($id: ID!, $title: String, $description: String, $status: String, $assigneeEmail: String, $dueDate: DateTime) {
-    updateTask(id: $id, title: $title, description: $description, status: $status, assigneeEmail: $assigneeEmail, dueDate: $dueDate) {
+  mutation(
+    $id: ID!
+    $title: String
+    $description: String
+    $status: String
+    $assigneeEmail: String
+    $dueDate: DateTime
+  ) {
+    updateTask(
+      id: $id
+      title: $title
+      description: $description
+      status: $status
+      assignee_email: $assigneeEmail   # <-- map var to snake_case arg
+      due_date: $dueDate               # <-- map var to snake_case arg
+    ) {
       task { id title description status assigneeEmail dueDate }
-    }
-  }
-`;
-
-export const ADD_TASK_COMMENT = gql`
-  mutation($taskId: ID!, $content: String!, $authorEmail: String!) {
-    addTaskComment(taskId: $taskId, content: $content, authorEmail: $authorEmail) {
-      comment { id content authorEmail createdAt }
     }
   }
 `;
