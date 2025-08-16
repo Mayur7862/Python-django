@@ -1,99 +1,92 @@
-import { useParams } from "react-router-dom";
-import { useMutation, useQuery } from "@apollo/client";
-import { CREATE_TASK, GET_TASKS, UPDATE_TASK } from "../gql";
+import { useMutation } from "@apollo/client";
+import { ADD_COMMENT, GET_TASKS } from "../gql";
 import { useState } from "react";
 
-const STATUSES = ["TODO", "IN_PROGRESS", "DONE"] as const;
+type Comment = { id: string; content: string; authorEmail: string; createdAt: string };
+export default function CommentsPanel({
+  taskId,
+  projectId,
+  comments,
+}: {
+  taskId: string;
+  projectId: string;
+  comments: Comment[];
+}) {
+  const [content, setContent] = useState("");
+  const [me, setMe] = useState("");
 
-export default function TaskBoard() {
-  const { id } = useParams(); // project id
-  const { data, loading, error } = useQuery(GET_TASKS, { variables: { projectId: id } });
-  const [title, setTitle] = useState("");
-
-  const [createTask] = useMutation(CREATE_TASK, {
-    variables: { projectId: id, title },
+  const [addComment, { loading }] = useMutation(ADD_COMMENT, {
+    variables: { taskId, content, authorEmail: me },
+    update(cache, { data }) {
+      const nc = data?.addTaskComment?.taskComment;
+      if (!nc) return;
+      const existing: any = cache.readQuery({ query: GET_TASKS, variables: { projectId } });
+      if (!existing) return;
+      const nextTasks = existing.tasks.map((t: any) =>
+        t.id === taskId ? { ...t, comments: [...(t.comments || []), nc] } : t
+      );
+      cache.writeQuery({ query: GET_TASKS, variables: { projectId }, data: { tasks: nextTasks } });
+    },
     optimisticResponse: {
-      createTask: {
-        __typename: "CreateTask",
-        task: {
-          __typename: "TaskType",
+      addTaskComment: {
+        __typename: "AddTaskComment",
+        taskComment: {
+          __typename: "TaskCommentType",
           id: "temp-" + Math.random(),
-          title,
-          description: "",
-          status: "TODO",
-          assigneeEmail: "",
-          dueDate: null,
+          content,
+          authorEmail: me || "me@example.com",
+          createdAt: new Date().toISOString(),
         },
       },
     },
-    update(cache, { data }) {
-      const newTask = data?.createTask?.task;
-      const existing: any = cache.readQuery({ query: GET_TASKS, variables: { projectId: id } });
-      if (existing && newTask) {
-        cache.writeQuery({
-          query: GET_TASKS,
-          variables: { projectId: id },
-          data: { tasks: [newTask, ...existing.tasks] },
-        });
-      }
+    onCompleted() {
+      setContent("");
     },
   });
 
-  const [updateTask] = useMutation(UPDATE_TASK);
-
-  if (loading) return <div>Loading tasks…</div>;
-  if (error) return <div className="text-red-600">Error: {error.message}</div>;
-  const tasks = data?.tasks || [];
-  const byStatus = (s: string) => tasks.filter((t: any) => t.status === s);
-
   return (
-    <div className="space-y-4">
-      <form
-        className="flex gap-2"
-        onSubmit={e => {
-          e.preventDefault();
-          if (title.trim()) {
-            createTask();
-            setTitle("");
-          }
-        }}
-      >
-        <input className="flex-1 border rounded-xl p-2" placeholder="Quick add task title" value={title} onChange={e => setTitle(e.target.value)} />
-        <button className="px-3 py-2 rounded-xl bg-black text-white">Add</button>
-      </form>
-
-      <div className="grid md:grid-cols-3 gap-4">
-        {STATUSES.map(status => (
-          <div key={status} className="rounded-2xl border p-3">
-            <div className="font-semibold mb-2">{status}</div>
-            <div className="space-y-2">
-              {byStatus(status).map((t: any) => (
-                <div key={t.id} className="rounded-xl border p-3">
-                  <div className="font-medium">{t.title}</div>
-                  <div className="text-xs opacity-70">{t.assigneeEmail || "Unassigned"}</div>
-                  <div className="flex gap-2 mt-2">
-                    {STATUSES.map(s => (
-                      <button
-                        key={s}
-                        onClick={() =>
-                          updateTask({
-                            variables: { id: t.id, status: s },
-                            optimisticResponse: { updateTask: { __typename: "UpdateTask", task: { ...t, status: s } } },
-                          })
-                        }
-                        className={`text-xs px-2 py-1 border rounded ${t.status === s ? "bg-black text-white" : ""}`}
-                      >
-                        {s}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ))}
-              {!byStatus(status).length && <div className="text-sm opacity-60">No tasks</div>}
+    <div className="mt-2 rounded-2xl border border-zinc-200 bg-white p-3">
+      <div className="mb-2 text-sm font-medium">Comments</div>
+      <div className="space-y-2 max-h-56 overflow-auto">
+        {(comments || []).map((c) => (
+          <div key={c.id} className="rounded-xl border border-zinc-200 bg-zinc-50 p-2">
+            <div className="text-xs text-zinc-600">{c.authorEmail}</div>
+            <div className="text-sm">{c.content}</div>
+            <div className="text-[11px] text-zinc-500">
+              {new Date(c.createdAt).toLocaleString()}
             </div>
           </div>
         ))}
+        {!comments?.length && <div className="text-xs opacity-60">No comments yet.</div>}
       </div>
+
+      <form
+        className="mt-3 flex flex-col gap-2 sm:flex-row"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (!content.trim() || !me.trim()) return;
+          addComment();
+        }}
+      >
+        <input
+          className="w-full rounded-xl border border-zinc-300 px-2 py-1 text-sm sm:w-64"
+          placeholder="Your email"
+          value={me}
+          onChange={(e) => setMe(e.target.value)}
+        />
+        <input
+          className="flex-1 rounded-xl border border-zinc-300 px-2 py-1 text-sm"
+          placeholder="Write a comment…"
+          value={content}
+          onChange={(e) => setContent(e.target.value)}
+        />
+        <button
+          disabled={loading}
+          className="rounded-xl border border-[rgb(var(--brand-400))] bg-[rgb(var(--brand-500))] px-3 py-1 text-sm text-white disabled:opacity-60"
+        >
+          {loading ? "Posting…" : "Post"}
+        </button>
+      </form>
     </div>
   );
 }

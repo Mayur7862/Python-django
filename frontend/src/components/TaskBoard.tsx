@@ -1,13 +1,15 @@
 import { useParams } from "react-router-dom";
 import { useMutation, useQuery } from "@apollo/client";
-import { CREATE_TASK, GET_TASKS, UPDATE_TASK } from "../gql";
+import { CREATE_TASK, GET_TASKS, UPDATE_TASK, DELETE_TASK } from "../gql";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
 import type { DropResult } from "@hello-pangea/dnd";
+import CommentsPanel from "./CommentsPanel";
 
 const STATUSES = ["TODO", "IN_PROGRESS", "DONE"] as const;
 type Status = (typeof STATUSES)[number];
 
+type Comment = { id: string; content: string; authorEmail: string; createdAt: string };
 type Task = {
   id: string;
   title: string;
@@ -15,6 +17,7 @@ type Task = {
   status: Status;
   assigneeEmail?: string | null;
   dueDate?: string | null;
+  comments?: Comment[];
 };
 
 const chipClass = (active: boolean) =>
@@ -29,8 +32,9 @@ export default function TaskBoard() {
   // Quick add fields
   const [title, setTitle] = useState("");
   const [assignee, setAssignee] = useState("");
+  const [open, setOpen] = useState<Record<string, boolean>>({}); // comments toggles
 
-  // Local ordered ids per column (we own this after bootstrap)
+  // Local ordered ids per column
   const [orderedIds, setOrderedIds] = useState<Record<Status, string[]>>({
     TODO: [],
     IN_PROGRESS: [],
@@ -47,15 +51,11 @@ export default function TaskBoard() {
     return map;
   }, [tasks]);
 
-  // ---- BOOTSTRAP ONLY ONCE ----
-  // Build initial column order from server data one time (or when project changes)
-  useEffect(() => {
-    bootstrapped.current = false; // project changed → allow bootstrap
-  }, [projectId]);
-
+  // Bootstrap once per project
+  useEffect(() => { bootstrapped.current = false; }, [projectId]);
   useEffect(() => {
     if (loading || error) return;
-    if (bootstrapped.current) return; // keep local order after first build
+    if (bootstrapped.current) return;
     setOrderedIds({
       TODO: tasks.filter((t) => t.status === "TODO").map((t) => t.id),
       IN_PROGRESS: tasks.filter((t) => t.status === "IN_PROGRESS").map((t) => t.id),
@@ -64,16 +64,13 @@ export default function TaskBoard() {
     bootstrapped.current = true;
   }, [loading, error, tasks, projectId]);
 
-  // ---- MUTATIONS ----
-
-  // Simpler & robust approach: refetch, then merge into local order
+  // Mutations
   const [createTask, { loading: creating }] = useMutation(CREATE_TASK, {
     refetchQueries: [{ query: GET_TASKS, variables: { projectId } }],
     awaitRefetchQueries: true,
     onCompleted(res) {
       const nt = res?.createTask?.task as Task | undefined;
       if (nt) {
-        // put new task at top of TODO locally
         setOrderedIds((prev) => ({ ...prev, TODO: [nt.id, ...prev.TODO] }));
       }
     },
@@ -81,8 +78,24 @@ export default function TaskBoard() {
 
   const [updateTask] = useMutation(UPDATE_TASK);
 
-  // ---- UI HELPERS ----
+  const [deleteTask] = useMutation(DELETE_TASK, {
+    update(cache, { data }) {
+      const delId = data?.deleteTask?.deletedId;
+      if (!delId) return;
+      const existing: any = cache.readQuery({ query: GET_TASKS, variables: { projectId } });
+      if (!existing) return;
+      cache.writeQuery({
+        query: GET_TASKS,
+        variables: { projectId },
+        data: { tasks: (existing.tasks as Task[]).filter(t => t.id !== delId) },
+      });
+    },
+  });
 
+  if (loading) return <div>Loading tasks…</div>;
+  if (error) return <div className="text-red-600">Error: {error.message}</div>;
+
+  // DnD helpers
   function reorder<T>(list: T[], startIndex: number, endIndex: number) {
     const result = list.slice();
     const [removed] = result.splice(startIndex, 1);
@@ -97,7 +110,6 @@ export default function TaskBoard() {
     const from = source.droppableId as Status;
     const to = destination.droppableId as Status;
 
-    // Same column reorder → update local order only
     if (from === to) {
       setOrderedIds((prev) => ({
         ...prev,
@@ -106,7 +118,6 @@ export default function TaskBoard() {
       return;
     }
 
-    // Cross column move → update local order AND persist status
     setOrderedIds((prev) => {
       const fromIds = prev[from].slice();
       const toIds = prev[to].slice();
@@ -117,11 +128,7 @@ export default function TaskBoard() {
 
     const moved = taskById[draggableId];
     if (!moved) return;
-
-    updateTask({
-      variables: { id: moved.id, status: to },
-      // no cache writes: we trust our local order; server status change won’t overwrite it
-    });
+    updateTask({ variables: { id: moved.id, status: to } });
   }
 
   const columnTint = (s: Status) =>
@@ -129,12 +136,9 @@ export default function TaskBoard() {
     : s === "IN_PROGRESS" ? "bg-blue-50 border-blue-100"
     : "bg-amber-50 border-amber-100";
 
-  if (loading) return <div>Loading tasks…</div>;
-  if (error) return <div className="text-red-600">Error: {error.message}</div>;
-
   return (
     <div className="space-y-4">
-      {/* Quick add (assignee only at creation) */}
+      {/* Quick add */}
       <form
         className="flex flex-col gap-2 sm:flex-row"
         onSubmit={async (e) => {
@@ -209,8 +213,33 @@ export default function TaskBoard() {
                               {...prov.dragHandleProps}
                               className={`rounded-2xl border border-zinc-200 bg-white p-3 shadow-sm transition ${snap.isDragging ? "rotate-[1deg] shadow-md" : ""}`}
                             >
-                              <div className="font-medium">{t.title}</div>
-                              <div className="text-xs text-zinc-600">{t.assigneeEmail || "Unassigned"}</div>
+                              <div className="flex items-start gap-2">
+                                <div className="flex-1">
+                                  <div className="font-medium">{t.title}</div>
+                                  <div className="text-xs text-zinc-600">
+                                    {t.assigneeEmail || "Unassigned"}
+                                  </div>
+                                </div>
+                                <button
+                                  className="text-xs rounded-xl border px-2 py-1 hover:bg-red-50 hover:border-red-300"
+                                  onClick={() => {
+                                    // optimistic local removal
+                                    setOrderedIds(prev => {
+                                      const from = t.status as Status;
+                                      const arr = prev[from].slice().filter(id => id !== t.id);
+                                      return { ...prev, [from]: arr };
+                                    });
+                                    // Apollo list removal via update handler
+                                    deleteTask({
+                                      variables: { id: t.id },
+                                      optimisticResponse: { deleteTask: { __typename: "DeleteTask", ok: true, deletedId: t.id } },
+                                    });
+                                  }}
+                                  title="Delete task"
+                                >
+                                  Delete
+                                </button>
+                              </div>
 
                               <div className="mt-2 flex flex-wrap gap-2">
                                 {STATUSES.map((s) => (
@@ -219,15 +248,13 @@ export default function TaskBoard() {
                                     className={chipClass(t.status === s)}
                                     onClick={() =>
                                       setOrderedIds((prev) => {
-                                        // move locally
-                                        const from = t.status;
+                                        const from = t.status as Status;
                                         if (from === s) return prev;
                                         const fromIds = prev[from].slice();
                                         const toIds = prev[s].slice();
                                         const idx = fromIds.indexOf(t.id);
                                         if (idx > -1) fromIds.splice(idx, 1);
                                         toIds.unshift(t.id);
-                                        // persist
                                         updateTask({ variables: { id: t.id, status: s } });
                                         return { ...prev, [from]: fromIds, [s]: toIds };
                                       })
@@ -236,7 +263,21 @@ export default function TaskBoard() {
                                     {s.replace("_", " ")}
                                   </button>
                                 ))}
+                                <button
+                                  className="ml-auto text-xs rounded-xl border px-2 py-1 hover:bg-zinc-50"
+                                  onClick={() => setOpen((o) => ({ ...o, [t.id]: !o[t.id] }))}
+                                >
+                                  {open[t.id] ? "Hide comments" : "Comments"}
+                                </button>
                               </div>
+
+                              {open[t.id] && (
+                                <CommentsPanel
+                                  taskId={t.id}
+                                  projectId={projectId!}
+                                  comments={t.comments || []}
+                                />
+                              )}
                             </div>
                           )}
                         </Draggable>
