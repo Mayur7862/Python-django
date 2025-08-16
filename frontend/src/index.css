@@ -1,0 +1,5 @@
+@import "tailwindcss";   /* v4 style import */
+
+/* your global bits */
+:root { color-scheme: light dark; }
+html, body, #root { height: 100%; }
