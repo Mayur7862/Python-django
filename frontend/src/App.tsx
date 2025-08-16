@@ -14,7 +14,7 @@ export default function App() {
             to="/"
             className="rounded-2xl bg-gradient-to-r from-[rgb(var(--brand-600))] to-[rgb(var(--brand-400))] bg-clip-text text-xl font-extrabold text-transparent"
           >
-            Mini PM
+            Taskify-lite
           </Link>
 
           <nav className="ml-auto flex items-center gap-2">
